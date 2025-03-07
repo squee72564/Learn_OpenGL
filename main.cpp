@@ -201,10 +201,10 @@ int main() {
     glDeleteShader(fragmentShader);
 
     std::vector<Pyramid> pyramids;
-    int num_cols = 1;
     int num_rows = 25;
-    float horizontal_offset = (2.0f / (float)num_cols);
+    int num_cols = num_rows;
     float vertical_offset = (2.0f / (float)num_rows);
+    float horizontal_offset = (2.0f / (float)num_rows);
 
     for (int i = 0; i < num_rows; ++i) {
 	for (int j = 0; j < num_cols; ++j) {
@@ -213,8 +213,8 @@ int main() {
 	    pyramid.translationMatrix = glm::translate(
 		pyramid.translationMatrix,
 		glm::vec3(
-		    (-1.0f + horizontal_offset / 2.0f) + (j * horizontal_offset),
-		    (-1.0f + vertical_offset   / 2.0f) + (i * vertical_offset),
+		    (-2.0f + horizontal_offset * (1 + i + (j<<1)) ) / 2.0f,
+		    (-2.0f + vertical_offset   * (1 + 0 + (i<<1)) ) / 2.0f,
 		    0.0f
 		)
 	    );
@@ -222,9 +222,9 @@ int main() {
 	    pyramid.scalingMatrix = glm::scale(
 		glm::mat4(1.0f),
 		glm::vec3(
-		    1.0f / (float)(num_rows + num_cols),
-		    1.0f / (float)(num_rows + num_cols),
-		    1.0f / (float)(num_rows + num_cols)
+		    1.0f / (float)(num_rows + num_rows),
+		    1.0f / (float)(num_rows + num_rows),
+		    1.0f / (float)(num_rows + num_rows)
 		)
 	    );
 
@@ -234,6 +234,7 @@ int main() {
 
 	    pyramids.emplace_back(pyramid);
 	}
+	num_cols--;
     }
 
     // Main render loop
