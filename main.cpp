@@ -8,34 +8,8 @@
 #include <vector>
 #include <chrono>
 
-GLuint VBO[1];
-GLuint VAO[1];
-GLuint EBO[1];
+GLuint shaderProgram;
 GLint uniTrans;
-unsigned int vertexShader;
-unsigned int fragmentShader;
-unsigned int shaderProgram;
-
-// Vertex Shader: Receives position and color from the application and passes them to the fragment shader
-const char *vertexShaderSource = "#version 460 core\n"
-        "layout (location = 0) in vec3 aPos;\n" 	// Position of the vertex
-        "layout (location = 1) in vec3 aColor;\n" 	// Color of the vertex
-	"uniform mat4 trans;\n"				// Uniform for transformation matrix
-        "out vec3 vertexColor;\n" 			// Output the color to the fragment shader
-        "void main()\n"
-        "{\n"
-        "       gl_Position = trans * vec4(aPos, 1.0f);\n"		// Set position & apply transformation
-        "       vertexColor = aColor;\n" 				// Pass color to fragment shader
-        "}\0";
-
-// Fragment Shader: Receives the interpolated color and applies it to each fragment
-const char *fragmentShaderSource = "#version 460 core\n"
-        "in vec3 vertexColor;\n"			// Interpolated color from vertex shader
-        "out vec4 FragColor;\n"				// Output color
-        "void main()\n"
-        "{\n"
-        "       FragColor = vec4(vertexColor, 1.0f);\n" // Use interpolated color for the fragment
-        "}\0";
 
 // Callback function to adjust the viewport when the window is resized
 void framebuffer_size_callback(GLFWwindow* window, int width, int height)
@@ -44,180 +18,253 @@ void framebuffer_size_callback(GLFWwindow* window, int width, int height)
         glViewport(0, 0, width, height);
 }  
 
-// Initialize GLFW for OpenGL window creation
-void init_gl_window(void) {
-        glfwInit();
-        glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
-        glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 6);
-        glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-}
+// Vertex Shader and Fragment Shader (same as before)
+const char* vertexShaderSource = R"(
+#version 460 core
+layout (location = 0) in vec3 aPos;
+layout (location = 1) in vec3 aColor;
+uniform mat4 trans;
+out vec3 vertexColor;
+void main()
+{
+    gl_Position = trans * vec4(aPos, 1.0f);
+    vertexColor = aColor;
+})";
 
-// Process user input (e.g., ESC key to close the window)
-void processInput(GLFWwindow *window) {
-        if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
-                glfwSetWindowShouldClose(window, true);
-}
+const char* fragmentShaderSource = R"(
+#version 460 core
+in vec3 vertexColor;
+out vec4 FragColor;
+void main()
+{
+    FragColor = vec4(vertexColor, 1.0f);
+})";
 
-int main() {
-        // Initialize and configure GLFW
-        init_gl_window();
+// Pyramid class definition
+class Pyramid {
+public:
+    GLuint VBO, VAO, EBO;
+    glm::mat4 rotationMatrixX, rotationMatrixY, translationMatrix, scalingMatrix;
+    GLuint uniTrans;
 
-        // Create window
-        GLFWwindow *window = glfwCreateWindow(800, 600, "Multi-Colored Pyramid", NULL, NULL); 
-        if (window == nullptr) {
-                std::cerr << "Failed to create GLFW window" << std::endl;
-                glfwTerminate();
-                return -1;
-        }
+    std::vector<glm::vec3> vertices{
+        {0.0f, 0.5f, 0.0f}, {1.0f, 1.0f, 1.0f},         // top-center           0
+        {0.5f, -0.5f, 0.5f}, {1.0f, 0.0f, 0.0f},        // back-right           1
+        {-0.5f, -0.5f, 0.5f}, {0.0f, 1.0f, 0.0f},       // back-left            2
+        {0.5f, -0.5f, -0.5f}, {0.0f, 0.0f, 1.0f},       // front-right          3
+        {-0.5f, -0.5f, -0.5f}, {1.0f, 0.0f, 1.0f},      // front-left           4
+        {0.0f, -0.5f, 0.0f}, {0.0f, 0.0f, 0.0f},        // bottom-center        5
+    };
 
-        glfwMakeContextCurrent(window);
-        glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
+    std::vector<unsigned int> indices{
+        0,1,2, // face 1
+        0,3,4, // face 2
+        0,1,3, // face 3
+        0,2,4, // face 4
 
-        // Load OpenGL function pointers with GLAD
-        if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) {
-                std::cerr << "Failed to init GLAD" << std::endl;
-                glfwTerminate();
-                return -1;
-        }
+        5,1,2,
+        5,1,3,
+        5,3,4,
+        5,2,4
+    };
 
-	glEnable(GL_DEPTH_TEST); // Enable depth testing
+    Pyramid(GLuint shaderProgram) : VBO{}, VAO{}, EBO{}, rotationMatrixX{1.0f}, rotationMatrixY{1.0f}, translationMatrix{1.0f}, scalingMatrix{1.0f}, uniTrans{} {
+        // Initialize OpenGL resources
+        glGenVertexArrays(1, &VAO);
+        glGenBuffers(1, &VBO);
+        glGenBuffers(1, &EBO);
 
-        // Compile shaders
-        int success{0};
-        char infoLog[512] = {0};
+        glBindVertexArray(VAO);
 
-        // Vertex shader
-        vertexShader = glCreateShader(GL_VERTEX_SHADER);
-        glShaderSource(vertexShader, 1, &vertexShaderSource, NULL);
-        glCompileShader(vertexShader);
-        glGetShaderiv(vertexShader, GL_COMPILE_STATUS, &success);
-        if(!success) {
-                glGetShaderInfoLog(vertexShader, 512, NULL, infoLog);
-                std::cerr << "ERROR::SHADER::VERTEX::COMPILATION_FAILED\n" << infoLog << std::endl;
-                return -1;
-        }
-
-        // Fragment shader
-        fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
-        glShaderSource(fragmentShader, 1, &fragmentShaderSource, NULL);
-        glCompileShader(fragmentShader);
-        glGetShaderiv(fragmentShader, GL_COMPILE_STATUS, &success);
-        if(!success) {
-                glGetShaderInfoLog(fragmentShader, 512, NULL, infoLog);
-                std::cerr << "ERROR::SHADER::FRAGMENT::COMPILATION_FAILED\n" << infoLog << std::endl;
-                return -1;
-        }
-
-        // Shader program
-        shaderProgram = glCreateProgram();
-        glAttachShader(shaderProgram, vertexShader);
-        glAttachShader(shaderProgram, fragmentShader);
-        glLinkProgram(shaderProgram);
-        glGetProgramiv(shaderProgram, GL_LINK_STATUS, &success);
-        if(!success) {
-                glGetProgramInfoLog(shaderProgram, 512, NULL, infoLog);
-                std::cerr << "ERROR::SHADER::PROGRAM::LINK_FAILED\n" << infoLog << std::endl;
-                return -1;
-        }
-
-        // Clean up shaders as they are already linked
-        glDeleteShader(vertexShader);
-        glDeleteShader(fragmentShader);
-
-        // Define pyramid vertices and colors
-        std::vector<glm::vec3> vertices{
-                {0.0f, 0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}, 	// top-center		0
-                {0.5f, -0.5f, 0.5f}, {1.0f, 0.0f, 0.0f},	// back-right		1
-                {-0.5f, -0.5f, 0.5f}, {0.0f, 1.0f, 0.0f},	// back-left		2
-                {0.5f, -0.5f, -0.5f}, {0.0f, 0.0f, 1.0f},	// front-right		3
-                {-0.5f, -0.5f, -0.5f}, {1.0f, 0.0f, 1.0f},	// front-left		4
-                {0.0f, -0.5f, 0.0f}, {0.0f, 0.0f, 0.0f},	// bottom-center	5
-        };
-
-	std::vector<unsigned int> indices{
-		0,1,2, // face 1
-		0,3,4, // face 2
-		0,1,3, // face 3
-		0,2,4, // face 4
-		
-		5,1,2,
-		5,1,3,
-		5,3,4,
-		5,2,4
-	};
-	
-        // Set up buffers
-        glGenVertexArrays(1, VAO);
-        glGenBuffers(1, VBO);
-	glGenBuffers(1, EBO);
-
-        glBindVertexArray(VAO[0]);
-
-        // Generate and bind vertex buffer
-        glBindBuffer(GL_ARRAY_BUFFER, VBO[0]);
+        glBindBuffer(GL_ARRAY_BUFFER, VBO);
         glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(glm::vec3), &vertices[0], GL_STATIC_DRAW);
 
-	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO[0]);
-	glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(unsigned int), &indices[0], GL_STATIC_DRAW);
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(unsigned int), &indices[0], GL_STATIC_DRAW);
 
-        // Position attribute
+        // Vertex attribute pointers
         glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 2 * sizeof(glm::vec3), (void*)0);
         glEnableVertexAttribArray(0);
 
-        // Color attribute
         glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 2 * sizeof(glm::vec3), (void*)(sizeof(glm::vec3)));
         glEnableVertexAttribArray(1);
 
-	glUseProgram(shaderProgram);
+        glUseProgram(shaderProgram);
+        uniTrans = glGetUniformLocation(shaderProgram, "trans");
+    }
 
-	uniTrans = glGetUniformLocation(shaderProgram, "trans");
+    void updateRotation(float delta_time) {
+        // Update rotation matrices
+        rotationMatrixY = glm::rotate(rotationMatrixY, glm::radians(360.0f * delta_time), glm::vec3(0.0f, 1.0f, 0.0f)); // Rotate around Y-axis
+        rotationMatrixX = glm::rotate(rotationMatrixX, glm::radians(30.0f * delta_time), glm::vec3(1.0f, 0.0f, 0.0f)); // Rotate around X-axis
+    }
 
-	auto t_start = std::chrono::high_resolution_clock::now();
-	float last_time = 0.0f;
+    void draw() {
+	glBindVertexArray(VAO);
 
-	glm::mat4 rotationMatrixX = glm::mat4(1.0f);
-	glm::mat4 rotationMatrixY = glm::mat4(1.0f);
+        // Combine the rotations and send the transformation matrix to the shader
+        glm::mat4 combinedRotation = translationMatrix * rotationMatrixX * rotationMatrixY * scalingMatrix;
+        glUniformMatrix4fv(uniTrans, 1, GL_FALSE, glm::value_ptr(combinedRotation));
 
-        // Main render loop
-        while(!glfwWindowShouldClose(window)) {
-                processInput(window);
+        // Draw the pyramid
+        glDrawElements(GL_TRIANGLES, indices.size(), GL_UNSIGNED_INT, 0);
 
-                glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
-                glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+	glBindVertexArray(0);
+    }
 
-		glBindBuffer(GL_ARRAY_BUFFER, VBO[0]);
-		glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(glm::vec3), &vertices[0], GL_STATIC_DRAW);
+    void cleanup() {
+        // Cleanup resources
+        glDeleteVertexArrays(1, &VAO);
+        glDeleteBuffers(1, &VBO);
+        glDeleteBuffers(1, &EBO);
+    }
 
-		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO[0]);
+    ~Pyramid() {}
+};
 
-		// Calculate transformation
-		auto t_now = std::chrono::high_resolution_clock::now();
-		float time = std::chrono::duration_cast<std::chrono::duration<float>>(t_now - t_start).count();
+// GLFW window and OpenGL setup (same as before)
+void init_gl_window() {
+    glfwInit();
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 6);
+    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+}
 
-		float delta_time = time - last_time;
-		last_time = time;
+void processInput(GLFWwindow *window) {
+    if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
+        glfwSetWindowShouldClose(window, true);
+}
 
-		rotationMatrixY = glm::rotate(rotationMatrixY, glm::radians(360.0f * delta_time), glm::vec3(0.0f, 1.0f, 0.0f)); // Rotate around Y-axis
-		rotationMatrixX = glm::rotate(rotationMatrixX, glm::radians(30.0f * delta_time), glm::vec3(1.0f, 0.0f, 0.0f)); // Rotate around X-axis
+int main() {
+    // Initialize and configure GLFW
+    init_gl_window();
 
-		glm::mat4 combinedRotation = rotationMatrixX * rotationMatrixY; 
-
-		glUniformMatrix4fv(uniTrans, 1, GL_FALSE, glm::value_ptr(combinedRotation));
-
-		glDrawElements(GL_TRIANGLES, indices.size(), GL_UNSIGNED_INT, 0);
-
-                glfwSwapBuffers(window);
-                glfwPollEvents();
-        }
-
-        // Clean up resources
-        glDeleteVertexArrays(1, VAO);
-        glDeleteBuffers(1, VBO);
-        glDeleteProgram(shaderProgram);
-
-        glfwDestroyWindow(window);
+    // Create window
+    GLFWwindow *window = glfwCreateWindow(800, 600, "Multi-Colored Pyramids", NULL, NULL);
+    if (window == nullptr) {
+        std::cerr << "Failed to create GLFW window" << std::endl;
         glfwTerminate();
+        return -1;
+    }
 
-        return 0;
+    glfwMakeContextCurrent(window);
+    glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
+
+    // Load OpenGL function pointers with GLAD
+    if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) {
+        std::cerr << "Failed to init GLAD" << std::endl;
+        glfwTerminate();
+        return -1;
+    }
+
+    glEnable(GL_DEPTH_TEST); // Enable depth testing
+
+    int success{0};
+    char infoLog[512] = {0};
+
+    // Compile shaders and create shader program 
+    GLuint vertexShader = glCreateShader(GL_VERTEX_SHADER);
+    glShaderSource(vertexShader, 1, &vertexShaderSource, NULL);
+    glCompileShader(vertexShader);
+
+    glGetShaderiv(vertexShader, GL_COMPILE_STATUS, &success);
+    if(!success) {
+	    glGetShaderInfoLog(vertexShader, 512, NULL, infoLog);
+	    std::cerr << "ERROR::SHADER::VERTEX::COMPILATION_FAILED\n" << infoLog << std::endl;
+	    return -1;
+    }
+
+    GLuint fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
+    glShaderSource(fragmentShader, 1, &fragmentShaderSource, NULL);
+    glCompileShader(fragmentShader);
+
+    glGetShaderiv(fragmentShader, GL_COMPILE_STATUS, &success);
+    if(!success) {
+	    glGetShaderInfoLog(fragmentShader, 512, NULL, infoLog);
+	    std::cerr << "ERROR::SHADER::FRAGMENT::COMPILATION_FAILED\n" << infoLog << std::endl;
+	    return -1;
+    }
+
+    shaderProgram = glCreateProgram();
+    glAttachShader(shaderProgram, vertexShader);
+    glAttachShader(shaderProgram, fragmentShader);
+    glLinkProgram(shaderProgram);
+
+    glGetProgramiv(shaderProgram, GL_LINK_STATUS, &success);
+    if(!success) {
+	    glGetProgramInfoLog(shaderProgram, 512, NULL, infoLog);
+	    std::cerr << "ERROR::SHADER::PROGRAM::LINK_FAILED\n" << infoLog << std::endl;
+	    return -1;
+    }
+
+    glDeleteShader(vertexShader);
+    glDeleteShader(fragmentShader);
+
+    std::vector<Pyramid> pyramids;
+    int num_cols = 1;
+    int num_rows = 25;
+    float horizontal_offset = (2.0f / (float)num_cols);
+    float vertical_offset = (2.0f / (float)num_rows);
+
+    for (int i = 0; i < num_rows; ++i) {
+	for (int j = 0; j < num_cols; ++j) {
+	    Pyramid pyramid(shaderProgram);
+	    
+	    pyramid.translationMatrix = glm::translate(
+		pyramid.translationMatrix,
+		glm::vec3(
+		    (-1.0f + horizontal_offset / 2.0f) + (j * horizontal_offset),
+		    (-1.0f + vertical_offset   / 2.0f) + (i * vertical_offset),
+		    0.0f
+		)
+	    );
+
+	    pyramid.scalingMatrix = glm::scale(
+		glm::mat4(1.0f),
+		glm::vec3(
+		    1.0f / (float)(num_rows + num_cols),
+		    1.0f / (float)(num_rows + num_cols),
+		    1.0f / (float)(num_rows + num_cols)
+		)
+	    );
+
+	    if ((j + i) % 2 == 0) {
+	        pyramid.rotationMatrixX = glm::rotate(pyramid.rotationMatrixX, glm::radians(180.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+	    }
+
+	    pyramids.emplace_back(pyramid);
+	}
+    }
+
+    // Main render loop
+    auto t_start = std::chrono::high_resolution_clock::now();
+    float last_time = 0.0f;
+
+    while (!glfwWindowShouldClose(window)) {
+        processInput(window);
+
+        glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+        // Update rotation
+        auto t_now = std::chrono::high_resolution_clock::now();
+        float time = std::chrono::duration_cast<std::chrono::duration<float>>(t_now - t_start).count();
+        float delta_time = time - last_time;
+        last_time = time;
+
+	for (auto& pyramid : pyramids) {
+	    pyramid.updateRotation(delta_time);
+	    pyramid.draw();
+	}
+
+        glfwSwapBuffers(window);
+        glfwPollEvents();
+    }
+
+    // Cleanup and terminate
+    glfwDestroyWindow(window);
+    glfwTerminate();
+
+    return 0;
 }
 
