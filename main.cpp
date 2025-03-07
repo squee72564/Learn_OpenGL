@@ -6,10 +6,11 @@
 
 #include <iostream>
 #include <vector>
+#include <array>
 #include <chrono>
+#include <utility>
 
 GLuint shaderProgram;
-GLint uniTrans;
 
 // Callback function to adjust the viewport when the window is resized
 void framebuffer_size_callback(GLFWwindow* window, int width, int height)
@@ -42,33 +43,46 @@ void main()
 
 // Pyramid class definition
 class Pyramid {
-public:
+private:
     GLuint VBO, VAO, EBO;
-    glm::mat4 rotationMatrixX, rotationMatrixY, translationMatrix, scalingMatrix;
+    glm::mat4 rotationMatrixX, rotationMatrixY, rotationMatrixZ, translationMatrix, scalingMatrix;
     GLuint uniTrans;
 
-    std::vector<glm::vec3> vertices{
+    static constexpr const std::array<glm::vec3, 12> vertices = {{
         {0.0f, 0.5f, 0.0f}, {1.0f, 1.0f, 1.0f},         // top-center           0
         {0.5f, -0.5f, 0.5f}, {1.0f, 0.0f, 0.0f},        // back-right           1
         {-0.5f, -0.5f, 0.5f}, {0.0f, 1.0f, 0.0f},       // back-left            2
         {0.5f, -0.5f, -0.5f}, {0.0f, 0.0f, 1.0f},       // front-right          3
         {-0.5f, -0.5f, -0.5f}, {1.0f, 0.0f, 1.0f},      // front-left           4
-        {0.0f, -0.5f, 0.0f}, {0.0f, 0.0f, 0.0f},        // bottom-center        5
-    };
+        {0.0f, -0.5f, 0.0f}, {0.0f, 0.0f, 0.0f}        	// bottom-center        5
+    }};
 
-    std::vector<unsigned int> indices{
+    static constexpr const std::array<unsigned int, 24> indices = {{
         0,1,2, // face 1
         0,3,4, // face 2
         0,1,3, // face 3
         0,2,4, // face 4
 
+	// Bottom
         5,1,2,
         5,1,3,
         5,3,4,
         5,2,4
-    };
+    }};
 
-    Pyramid(GLuint shaderProgram) : VBO{}, VAO{}, EBO{}, rotationMatrixX{1.0f}, rotationMatrixY{1.0f}, translationMatrix{1.0f}, scalingMatrix{1.0f}, uniTrans{} {
+public:
+
+    Pyramid(GLuint shaderProgram)
+        : VBO{},
+          VAO{},
+          EBO{},
+          rotationMatrixX{1.0f},
+          rotationMatrixY{1.0f},
+          rotationMatrixZ{1.0f},
+          translationMatrix{1.0f},
+          scalingMatrix{1.0f},
+          uniTrans{}
+    {
         // Initialize OpenGL resources
         glGenVertexArrays(1, &VAO);
         glGenBuffers(1, &VBO);
@@ -93,18 +107,59 @@ public:
         uniTrans = glGetUniformLocation(shaderProgram, "trans");
     }
 
-    void updateRotation(float delta_time) {
-        // Update rotation matrices
-        rotationMatrixY = glm::rotate(rotationMatrixY, glm::radians(360.0f * delta_time), glm::vec3(0.0f, 1.0f, 0.0f)); // Rotate around Y-axis
-        rotationMatrixX = glm::rotate(rotationMatrixX, glm::radians(30.0f * delta_time), glm::vec3(1.0f, 0.0f, 0.0f)); // Rotate around X-axis
+
+    template <typename vec3 = glm::vec3>
+    void translate(vec3&& translation) {
+	translationMatrix = glm::translate(
+	    translationMatrix,
+	    std::forward<vec3>(translation)
+	);
+    }
+
+    template <typename vec3 = glm::vec3>
+    void scale(vec3&& translation) {
+	scalingMatrix = glm::scale(
+	    glm::mat4(1.0f),
+	    std::forward<vec3>(translation)
+	);
+    }
+
+    void rotateX(float angleDegrees) {
+	rotationMatrixX = glm::rotate(
+	    rotationMatrixX,
+	    glm::radians(angleDegrees),
+	    glm::vec3(1.0f, 0.0f, 0.0f)
+	);
+    }
+
+    void rotateY(float angleDegrees) {
+	rotationMatrixY = glm::rotate(
+	    rotationMatrixY,
+	    glm::radians(angleDegrees),
+	    glm::vec3(0.0f, 1.0f, 0.0f)
+	);
+    }
+
+    void rotateZ(float angleDegrees) {
+	rotationMatrixZ = glm::rotate(
+	    rotationMatrixZ,
+	    glm::radians(angleDegrees),
+	    glm::vec3(0.0f, 0.0f, 1.0f)
+	);
     }
 
     void draw() {
 	glBindVertexArray(VAO);
 
         // Combine the rotations and send the transformation matrix to the shader
-        glm::mat4 combinedRotation = translationMatrix * rotationMatrixX * rotationMatrixY * scalingMatrix;
-        glUniformMatrix4fv(uniTrans, 1, GL_FALSE, glm::value_ptr(combinedRotation));
+        glm::mat4 final_transformation =
+		translationMatrix
+		* rotationMatrixX
+		* rotationMatrixY
+		* rotationMatrixZ
+		* scalingMatrix;
+	
+        glUniformMatrix4fv(uniTrans, 1, GL_FALSE, glm::value_ptr(final_transformation));
 
         // Draw the pyramid
         glDrawElements(GL_TRIANGLES, indices.size(), GL_UNSIGNED_INT, 0);
@@ -158,6 +213,8 @@ int main() {
     }
 
     glEnable(GL_DEPTH_TEST); // Enable depth testing
+    glEnable(GL_BLEND); // Enable blending
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
     int success{0};
     char infoLog[512] = {0};
@@ -169,9 +226,9 @@ int main() {
 
     glGetShaderiv(vertexShader, GL_COMPILE_STATUS, &success);
     if(!success) {
-	    glGetShaderInfoLog(vertexShader, 512, NULL, infoLog);
-	    std::cerr << "ERROR::SHADER::VERTEX::COMPILATION_FAILED\n" << infoLog << std::endl;
-	    return -1;
+	glGetShaderInfoLog(vertexShader, 512, NULL, infoLog);
+	std::cerr << "ERROR::SHADER::VERTEX::COMPILATION_FAILED\n" << infoLog << std::endl;
+	return -1;
     }
 
     GLuint fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
@@ -180,9 +237,9 @@ int main() {
 
     glGetShaderiv(fragmentShader, GL_COMPILE_STATUS, &success);
     if(!success) {
-	    glGetShaderInfoLog(fragmentShader, 512, NULL, infoLog);
-	    std::cerr << "ERROR::SHADER::FRAGMENT::COMPILATION_FAILED\n" << infoLog << std::endl;
-	    return -1;
+	glGetShaderInfoLog(fragmentShader, 512, NULL, infoLog);
+	std::cerr << "ERROR::SHADER::FRAGMENT::COMPILATION_FAILED\n" << infoLog << std::endl;
+	return -1;
     }
 
     shaderProgram = glCreateProgram();
@@ -192,26 +249,26 @@ int main() {
 
     glGetProgramiv(shaderProgram, GL_LINK_STATUS, &success);
     if(!success) {
-	    glGetProgramInfoLog(shaderProgram, 512, NULL, infoLog);
-	    std::cerr << "ERROR::SHADER::PROGRAM::LINK_FAILED\n" << infoLog << std::endl;
-	    return -1;
+	glGetProgramInfoLog(shaderProgram, 512, NULL, infoLog);
+	std::cerr << "ERROR::SHADER::PROGRAM::LINK_FAILED\n" << infoLog << std::endl;
+	return -1;
     }
 
     glDeleteShader(vertexShader);
     glDeleteShader(fragmentShader);
 
     std::vector<Pyramid> pyramids;
-    int num_rows = 25;
+    int num_rows = 10;
     int num_cols = num_rows;
     float vertical_offset = (2.0f / (float)num_rows);
     float horizontal_offset = (2.0f / (float)num_rows);
 
     for (int i = 0; i < num_rows; ++i) {
 	for (int j = 0; j < num_cols; ++j) {
+
 	    Pyramid pyramid(shaderProgram);
-	    
-	    pyramid.translationMatrix = glm::translate(
-		pyramid.translationMatrix,
+
+	    pyramid.translate(
 		glm::vec3(
 		    (-2.0f + horizontal_offset * (1 + i + (j<<1)) ) / 2.0f,
 		    (-2.0f + vertical_offset   * (1 + 0 + (i<<1)) ) / 2.0f,
@@ -219,8 +276,7 @@ int main() {
 		)
 	    );
 
-	    pyramid.scalingMatrix = glm::scale(
-		glm::mat4(1.0f),
+	    pyramid.scale(
 		glm::vec3(
 		    1.0f / (float)(num_rows + num_rows),
 		    1.0f / (float)(num_rows + num_rows),
@@ -229,11 +285,12 @@ int main() {
 	    );
 
 	    if ((j + i) % 2 == 0) {
-	        pyramid.rotationMatrixX = glm::rotate(pyramid.rotationMatrixX, glm::radians(180.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+		pyramid.rotateX(180.0f);
 	    }
 
 	    pyramids.emplace_back(pyramid);
 	}
+
 	num_cols--;
     }
 
@@ -244,7 +301,7 @@ int main() {
     while (!glfwWindowShouldClose(window)) {
         processInput(window);
 
-        glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
+        glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         // Update rotation
@@ -254,12 +311,17 @@ int main() {
         last_time = time;
 
 	for (auto& pyramid : pyramids) {
-	    pyramid.updateRotation(delta_time);
+	    pyramid.rotateY(720.0f * delta_time);
+	    pyramid.rotateX(180.0f * delta_time);
 	    pyramid.draw();
 	}
 
         glfwSwapBuffers(window);
         glfwPollEvents();
+    }
+
+    for (auto& pyramid : pyramids) {
+	pyramid.cleanup();
     }
 
     // Cleanup and terminate
@@ -268,4 +330,3 @@ int main() {
 
     return 0;
 }
-
